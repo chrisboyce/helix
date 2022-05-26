@@ -278,7 +278,7 @@ impl Completion {
             }
         }
     }
-    
+
     pub fn trigger_offset(&self) -> usize {
         self.trigger_offset
     }
