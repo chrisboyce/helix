@@ -69,16 +69,18 @@ impl ui::menu::Item for lsp::SymbolInformation {
 
     fn label(&self, current_doc_path: &Self::Data) -> Spans {
         if current_doc_path.as_ref() == Some(&self.location.uri) {
-            self.name.as_str().into()
+            format!("{} [{:?}]", self.name, self.kind).into()
         } else {
             match self.location.uri.to_file_path() {
                 Ok(path) => {
                     let relative_path = helix_core::path::get_relative_path(path.as_path())
                         .to_string_lossy()
                         .into_owned();
-                    format!("{} ({})", &self.name, relative_path).into()
+                    format!("{} ({}) [{:?}]", &self.name, relative_path, self.kind).into()
                 }
-                Err(_) => format!("{} ({})", &self.name, &self.location.uri).into(),
+                Err(_) => {
+                    format!("{} ({}) [{:?}]", &self.name, &self.location.uri, self.kind).into()
+                }
             }
         }
     }
@@ -198,6 +200,7 @@ fn sym_picker(
     offset_encoding: OffsetEncoding,
 ) -> FilePicker<lsp::SymbolInformation> {
     // TODO: drop current_path comparison and instead use workspace: bool flag?
+    log::trace!("AAA - {}:{}", file!(), line!());
     FilePicker::new(
         symbols,
         current_path.clone(),
@@ -348,6 +351,7 @@ pub fn symbol_picker(cx: &mut Context) {
                     }
                 };
 
+                log::info!("AAAAAA {}", file!());
                 let picker = sym_picker(symbols, current_url, offset_encoding);
                 compositor.push(Box::new(overlayed(picker)))
             }

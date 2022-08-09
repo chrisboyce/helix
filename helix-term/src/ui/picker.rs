@@ -490,6 +490,7 @@ impl<T: Item + 'static> Component for Picker<T> {
     }
 
     fn handle_event(&mut self, event: Event, cx: &mut Context) -> EventResult {
+        log::trace!("AAA - {:?}", &event);
         let key_event = match event {
             Event::Key(event) => event,
             Event::Resize(..) => return EventResult::Consumed(None),
