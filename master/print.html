@@ -187,8 +187,8 @@ cargo install --path helix-term
 config directory (for example <code>~/.config/helix/runtime</code> on Linux/macOS). This location can be overridden
 via the <code>HELIX_RUNTIME</code> environment variable.</p>
 <div class="table-wrapper"><table><thead><tr><th>OS</th><th>command</th></tr></thead><tbody>
-<tr><td>windows(cmd.exe)</td><td><code>xcopy runtime %AppData%/helix/runtime</code></td></tr>
-<tr><td>windows(powershell)</td><td><code>xcopy runtime $Env:AppData\helix\runtime</code></td></tr>
+<tr><td>windows(cmd.exe)</td><td><code>xcopy /e runtime %AppData%/helix/runtime</code></td></tr>
+<tr><td>windows(powershell)</td><td><code>xcopy /e runtime $Env:AppData\helix\runtime</code></td></tr>
 <tr><td>linux/macos</td><td><code>ln -s $PWD/runtime ~/.config/helix/runtime</code></td></tr>
 </tbody></table>
 </div>
@@ -683,9 +683,9 @@ you to selectively add search terms to your selections.</p>
 <h2 id="picker"><a class="header" href="#picker">Picker</a></h2>
 <p>Keys to use within picker. Remapping currently not supported.</p>
 <div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th></tr></thead><tbody>
-<tr><td><code>Up</code>, <code>Ctrl-p</code></td><td>Previous entry</td></tr>
+<tr><td><code>Tab</code>, <code>Up</code>, <code>Ctrl-p</code></td><td>Previous entry</td></tr>
 <tr><td><code>PageUp</code>, <code>Ctrl-u</code></td><td>Page up</td></tr>
-<tr><td><code>Down</code>, <code>Ctrl-n</code></td><td>Next entry</td></tr>
+<tr><td><code>Shift-tab</code>, <code>Down</code>, <code>Ctrl-n</code></td><td>Next entry</td></tr>
 <tr><td><code>PageDown</code>, <code>Ctrl-d</code></td><td>Page down</td></tr>
 <tr><td><code>Home</code></td><td>Go to first entry</td></tr>
 <tr><td><code>End</code></td><td>Go to last entry</td></tr>
@@ -855,7 +855,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>jsx</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
 <tr><td>julia</td><td>✓</td><td></td><td></td><td><code>julia</code></td></tr>
 <tr><td>kotlin</td><td>✓</td><td></td><td></td><td><code>kotlin-language-server</code></td></tr>
-<tr><td>latex</td><td>✓</td><td></td><td></td><td><code>texlab</code></td></tr>
+<tr><td>latex</td><td>✓</td><td>✓</td><td></td><td><code>texlab</code></td></tr>
 <tr><td>lean</td><td>✓</td><td></td><td></td><td><code>lean</code></td></tr>
 <tr><td>ledger</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>llvm</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
@@ -1185,6 +1185,9 @@ over it and is merged into the default palette.</p>
 <a href="https://macromates.com/manual/en/language_grammars">TextMate</a> scopes.</p>
 <ul>
 <li>
+<p><code>attribute</code> - Class attributes, html tag attributes</p>
+</li>
+<li>
 <p><code>type</code> - Types</p>
 <ul>
 <li><code>builtin</code> - Primitive types provided by the language (<code>int</code>, <code>usize</code>)</li>
@@ -1248,7 +1251,6 @@ over it and is merged into the default palette.</p>
 <li><code>member</code> - Fields of composite data types (e.g. structs, unions)</li>
 </ul>
 </li>
-<li><code>function</code> (TODO: ?)</li>
 </ul>
 </li>
 <li>
@@ -1259,6 +1261,7 @@ over it and is merged into the default palette.</p>
 <ul>
 <li><code>delimiter</code> - Commas, colons</li>
 <li><code>bracket</code> - Parentheses, angle brackets, etc.</li>
+<li><code>special</code> - String interpolation brackets.</li>
 </ul>
 </li>
 <li>
