@@ -33,6 +33,7 @@ use helix_view::{
     info::Info,
     input::KeyEvent,
     keyboard::KeyCode,
+    tree,
     view::View,
     Document, DocumentId, Editor, ViewId,
 };
@@ -875,8 +876,8 @@ fn goto_window(cx: &mut Context, align: Align) {
     let last_line = view.last_line(doc);
 
     let line = match align {
-        Align::Top => (view.offset.row + scrolloff + count),
-        Align::Center => (view.offset.row + ((last_line - view.offset.row) / 2)),
+        Align::Top => view.offset.row + scrolloff + count,
+        Align::Center => view.offset.row + ((last_line - view.offset.row) / 2),
         Align::Bottom => last_line.saturating_sub(scrolloff + count),
     }
     .max(view.offset.row + scrolloff)
@@ -4080,35 +4081,35 @@ fn rotate_view(cx: &mut Context) {
 }
 
 fn jump_view_right(cx: &mut Context) {
-    cx.editor.focus_right()
+    cx.editor.focus_direction(tree::Direction::Right)
 }
 
 fn jump_view_left(cx: &mut Context) {
-    cx.editor.focus_left()
+    cx.editor.focus_direction(tree::Direction::Left)
 }
 
 fn jump_view_up(cx: &mut Context) {
-    cx.editor.focus_up()
+    cx.editor.focus_direction(tree::Direction::Up)
 }
 
 fn jump_view_down(cx: &mut Context) {
-    cx.editor.focus_down()
+    cx.editor.focus_direction(tree::Direction::Down)
 }
 
 fn swap_view_right(cx: &mut Context) {
-    cx.editor.swap_right()
+    cx.editor.swap_split_in_direction(tree::Direction::Right)
 }
 
 fn swap_view_left(cx: &mut Context) {
-    cx.editor.swap_left()
+    cx.editor.swap_split_in_direction(tree::Direction::Left)
 }
 
 fn swap_view_up(cx: &mut Context) {
-    cx.editor.swap_up()
+    cx.editor.swap_split_in_direction(tree::Direction::Up)
 }
 
 fn swap_view_down(cx: &mut Context) {
-    cx.editor.swap_down()
+    cx.editor.swap_split_in_direction(tree::Direction::Down)
 }
 
 fn transpose_view(cx: &mut Context) {
@@ -4332,10 +4333,12 @@ fn select_textobject(cx: &mut Context, objtype: textobject::TextObject) {
                         'o' => textobject_treesitter("comment", range),
                         't' => textobject_treesitter("test", range),
                         'p' => textobject::textobject_paragraph(text, range, objtype, count),
-                        'm' => textobject::textobject_surround_closest(text, range, objtype, count),
+                        'm' => textobject::textobject_pair_surround_closest(
+                            text, range, objtype, count,
+                        ),
                         // TODO: cancel new ranges if inconsistent surround matches across lines
                         ch if !ch.is_ascii_alphanumeric() => {
-                            textobject::textobject_surround(text, range, objtype, ch, count)
+                            textobject::textobject_pair_surround(text, range, objtype, ch, count)
                         }
                         _ => range,
                     }
@@ -4361,7 +4364,7 @@ fn select_textobject(cx: &mut Context, objtype: textobject::TextObject) {
             ("a", "Argument/parameter (tree-sitter)"),
             ("o", "Comment (tree-sitter)"),
             ("t", "Test (tree-sitter)"),
-            ("m", "Matching delimiter under cursor"),
+            ("m", "Closest surrounding pair to cursor"),
             (" ", "... or any character acting as a pair"),
         ];
 
