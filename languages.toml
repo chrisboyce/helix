@@ -121,7 +121,7 @@ indent = { tab-width = 4, unit = "    " }
 
 [[grammar]]
 name = "fish"
-source = { git = "https://github.com/ram02z/tree-sitter-fish", rev = "04e54ab6585dfd4fee6ddfe5849af56f101b6d4f" }
+source = { git = "https://github.com/ram02z/tree-sitter-fish", rev = "84436cf24c2b3176bfbb220922a0fdbd0141e406" }
 
 [[language]]
 name = "mint"
@@ -735,10 +735,9 @@ language-server = { command = "zls" }
 indent = { tab-width = 4, unit = "    " }
 formatter = { command = "zig" , args = ["fmt", "--stdin"] }
 
-
 [[grammar]]
 name = "zig"
-source = { git = "https://github.com/maxxnino/tree-sitter-zig", rev = "93331b8bd8b4ebee2b575490b2758f16ad4e9f30" }
+source = { git = "https://github.com/maxxnino/tree-sitter-zig", rev = "8d3224c3bd0890fe08358886ebf54fca2ed448a6" }
 
 [[language]]
 name = "prolog"
@@ -1193,7 +1192,7 @@ language-server = { command = "solc", args = ["--lsp"] }
 
 [[grammar]]
 name = "solidity"
-source = { git = "https://github.com/slinlee/tree-sitter-solidity", rev = "f3a002274744e859bf64cf3524985f8c31ea84fd" }
+source = { git = "https://github.com/JoranHonig/tree-sitter-solidity", rev = "9004b86531cb424bd379424cf7266a4585f2af7d" }
 
 [[language]]
 name = "gleam"

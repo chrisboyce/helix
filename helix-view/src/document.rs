@@ -90,8 +90,6 @@ pub struct Document {
     path: Option<PathBuf>,
     encoding: &'static encoding::Encoding,
 
-    /// Current editing mode.
-    pub mode: Mode,
     pub restore_cursor: bool,
 
     /// Current indent style.
@@ -133,7 +131,6 @@ impl fmt::Debug for Document {
             .field("selections", &self.selections)
             .field("path", &self.path)
             .field("encoding", &self.encoding)
-            .field("mode", &self.mode)
             .field("restore_cursor", &self.restore_cursor)
             .field("syntax", &self.syntax)
             .field("language", &self.language)
@@ -349,7 +346,6 @@ impl Document {
             selections: HashMap::default(),
             indent_style: DEFAULT_INDENT,
             line_ending: DEFAULT_LINE_ENDING,
-            mode: Mode::Normal,
             restore_cursor: false,
             syntax: None,
             language: None,
@@ -411,7 +407,11 @@ impl Document {
     // We can't use anyhow::Result here since the output of the future has to be
     // clonable to be used as shared future. So use a custom error type.
     pub fn format(&self) -> Option<BoxFuture<'static, Result<Transaction, FormatterError>>> {
-        if let Some(formatter) = self.language_config().and_then(|c| c.formatter.clone()) {
+        if let Some(formatter) = self
+            .language_config()
+            .and_then(|c| c.formatter.clone())
+            .filter(|formatter| which::which(&formatter.command).is_ok())
+        {
             use std::process::Stdio;
             let text = self.text().clone();
             let mut process = tokio::process::Command::new(&formatter.command);
@@ -923,11 +923,6 @@ impl Document {
         let current_revision = history.current_revision();
         self.history.set(history);
         self.last_saved_revision = current_revision;
-    }
-
-    /// Current editing mode for the [`Document`].
-    pub fn mode(&self) -> Mode {
-        self.mode
     }
 
     /// Corresponding language scope name. Usually `source.<lang>`.
