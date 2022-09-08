@@ -20,7 +20,9 @@ use helix_core::{
     object, pos_at_coords, pos_at_visual_coords,
     regex::{self, Regex, RegexBuilder},
     search::{self, CharMatcher},
-    selection, shellwords, surround, textobject,
+    selection, shellwords, surround,
+    syntax::LanguageServerFeature,
+    textobject,
     tree_sitter::Node,
     unicode::width::UnicodeWidthChar,
     visual_coords_at_pos, LineEnding, Position, Range, Rope, RopeGraphemes, RopeSlice, Selection,
@@ -47,7 +49,10 @@ use crate::{
     args,
     compositor::{self, Component, Compositor},
     keymap::ReverseKeymap,
-    ui::{self, overlay::overlayed, FilePicker, Picker, Popup, Prompt, PromptEvent},
+    ui::{
+        self, menu::Item, overlay::overlayed, CompletionItem, FilePicker, Picker, Popup, Prompt,
+        PromptEvent,
+    },
 };
 
 use crate::job::{self, Job, Jobs};
@@ -2891,23 +2896,20 @@ pub mod insert {
         use helix_lsp::lsp;
         // if ch matches completion char, trigger completion
         let doc = doc_mut!(cx.editor);
-        let language_server = match doc.language_server() {
-            Some(language_server) => language_server,
-            None => return,
-        };
+        let language_servers = doc.language_servers_with_feature(LanguageServerFeature::Completion);
+        let trigger_completion = language_servers.iter().any(|ls| {
+            let capabilities = ls.capabilities();
 
-        let capabilities = language_server.capabilities();
-
-        if let Some(lsp::CompletionOptions {
-            trigger_characters: Some(triggers),
-            ..
-        }) = &capabilities.completion_provider
-        {
             // TODO: what if trigger is multiple chars long
-            if triggers.iter().any(|trigger| trigger.contains(ch)) {
-                cx.editor.clear_idle_timer();
-                super::completion(cx);
-            }
+            matches!(&capabilities.completion_provider, Some(lsp::CompletionOptions {
+                    trigger_characters: Some(triggers),
+                    ..
+                }) if triggers.iter().any(|trigger| trigger.contains(ch)))
+        });
+
+        if trigger_completion {
+            cx.editor.clear_idle_timer();
+            super::completion(cx);
         }
     }
 
@@ -2915,36 +2917,41 @@ pub mod insert {
         use helix_lsp::lsp;
         // if ch matches signature_help char, trigger
         let doc = doc_mut!(cx.editor);
-        // The language_server!() macro is not used here since it will
-        // print an "LSP not active for current buffer" message on
-        // every keypress.
-        let language_server = match doc.language_server() {
-            Some(language_server) => language_server,
-            None => return,
-        };
+        // lsp doesn't tell us when to close the signature help, so we request
+        // the help information again after common close triggers which should
+        // return None, which in turn closes the popup.
+        let close_triggers = &[')', ';', '.'];
+        let language_servers =
+            doc.language_servers_with_feature(LanguageServerFeature::SignatureHelp);
+        let language_server_id = language_servers.iter().find_map(|ls| {
+            let capabilities = ls.capabilities();
 
-        let capabilities = language_server.capabilities();
-
-        if let lsp::ServerCapabilities {
-            signature_help_provider:
-                Some(lsp::SignatureHelpOptions {
-                    trigger_characters: Some(triggers),
-                    // TODO: retrigger_characters
+            match capabilities {
+                lsp::ServerCapabilities {
+                    signature_help_provider:
+                        Some(lsp::SignatureHelpOptions {
+                            trigger_characters: Some(triggers),
+                            // TODO: retrigger_characters
+                            ..
+                        }),
                     ..
-                }),
-            ..
-        } = capabilities
-        {
-            // TODO: what if trigger is multiple chars long
-            let is_trigger = triggers.iter().any(|trigger| trigger.contains(ch));
-            // lsp doesn't tell us when to close the signature help, so we request
-            // the help information again after common close triggers which should
-            // return None, which in turn closes the popup.
-            let close_triggers = &[')', ';', '.'];
-
-            if is_trigger || close_triggers.contains(&ch) {
-                super::signature_help_impl(cx, SignatureHelpInvoked::Automatic);
+                } if triggers.iter().any(|trigger| trigger.contains(ch))
+                    || close_triggers.contains(&ch) =>
+                {
+                    Some(ls.id())
+                }
+                _ if close_triggers.contains(&ch) => Some(ls.id()),
+                // TODO: what if trigger is multiple chars long
+                _ => None,
             }
+        });
+
+        if let Some(id) = language_server_id {
+            super::signature_help_impl_with_language_server_id(
+                cx,
+                id,
+                SignatureHelpInvoked::Automatic,
+            )
         }
     }
 
@@ -2958,7 +2965,7 @@ pub mod insert {
         Some(transaction)
     }
 
-    use helix_core::auto_pairs;
+    use helix_core::{auto_pairs, syntax::LanguageServerFeature};
 
     pub fn insert_char(cx: &mut Context, c: char) {
         let (view, doc) = current_ref!(cx.editor);
@@ -3666,8 +3673,11 @@ fn format_selections(cx: &mut Context) {
     // via lsp if available
     // else via tree-sitter indentation calculations
 
-    let language_server = match doc.language_server() {
-        Some(language_server) => language_server,
+    let language_server = match doc
+        .language_servers_with_feature(LanguageServerFeature::Format)
+        .first()
+    {
+        Some(language_server) => *language_server,
         None => return,
     };
 
@@ -3680,10 +3690,6 @@ fn format_selections(cx: &mut Context) {
     // TODO: all of the TODO's and commented code inside the loop,
     // to make this actually work.
     for _range in ranges {
-        let _language_server = match doc.language_server() {
-            Some(language_server) => language_server,
-            None => return,
-        };
         // TODO: handle fails
         // TODO: concurrent map
 
@@ -3803,23 +3809,24 @@ fn remove_primary_selection(cx: &mut Context) {
 }
 
 pub fn completion(cx: &mut Context) {
+    // TODO completion starts to get ugly...
+    // maybe think about something like completion provider and separate completion-state into helix-view?
+    let clear_completion = async move {
+        let call: job::Callback =
+            Box::new(move |editor: &mut Editor, compositor: &mut Compositor| {
+                let ui = compositor.find::<ui::EditorView>().unwrap();
+                ui.clear_completion(editor);
+            });
+        Ok(call)
+    };
+    cx.jobs.callback(clear_completion);
+
     use helix_lsp::{lsp, util::pos_to_lsp_pos};
 
     let (view, doc) = current!(cx.editor);
 
-    let language_server = match doc.language_server() {
-        Some(language_server) => language_server,
-        None => return,
-    };
-
-    let offset_encoding = language_server.offset_encoding();
     let text = doc.text().slice(..);
     let cursor = doc.selection(view.id).primary().cursor(text);
-
-    let pos = pos_to_lsp_pos(doc.text(), cursor, offset_encoding);
-
-    let future = language_server.completion(doc.identifier(), pos, None);
-
     let trigger_offset = cursor;
 
     // TODO: trigger_offset should be the cursor offset but we also need a starting offset from where we want to apply
@@ -3832,52 +3839,64 @@ pub fn completion(cx: &mut Context) {
     let start_offset = cursor.saturating_sub(offset);
     let prefix = text.slice(start_offset..cursor).to_string();
 
-    cx.callback(
-        future,
-        move |editor, compositor, response: Option<lsp::CompletionResponse>| {
-            if editor.mode != Mode::Insert {
-                // we're not in insert mode anymore
-                return;
-            }
+    let mut requests = Vec::new();
 
-            let mut items = match response {
-                Some(lsp::CompletionResponse::Array(items)) => items,
-                // TODO: do something with is_incomplete
-                Some(lsp::CompletionResponse::List(lsp::CompletionList {
-                    is_incomplete: _is_incomplete,
-                    items,
-                })) => items,
-                None => Vec::new(),
-            };
+    for language_server in doc.language_servers_with_feature(LanguageServerFeature::Completion) {
+        let language_server_id = language_server.id();
 
-            if !prefix.is_empty() {
-                items = items
-                    .into_iter()
-                    .filter(|item| {
-                        item.filter_text
-                            .as_ref()
-                            .unwrap_or(&item.label)
-                            .starts_with(&prefix)
-                    })
-                    .collect();
-            }
+        let offset_encoding = language_server.offset_encoding();
 
-            if items.is_empty() {
-                // editor.set_error("No completion available");
-                return;
-            }
-            let size = compositor.size();
-            let ui = compositor.find::<ui::EditorView>().unwrap();
-            ui.set_completion(
-                editor,
-                items,
-                offset_encoding,
-                start_offset,
-                trigger_offset,
-                size,
-            );
-        },
-    );
+        let pos = pos_to_lsp_pos(doc.text(), cursor, offset_encoding);
+
+        let future = language_server.completion(doc.identifier(), pos, None);
+        requests.push((future, language_server_id, offset_encoding));
+    }
+
+    for (future, language_server_id, offset_encoding) in requests {
+        let prefix = prefix.clone();
+        cx.callback(
+            future,
+            move |editor, compositor, response: Option<lsp::CompletionResponse>| {
+                let doc = doc!(editor);
+                if doc.mode() != Mode::Insert {
+                    // we're not in insert mode anymore
+                    return;
+                }
+
+                let mut items = match response {
+                    Some(lsp::CompletionResponse::Array(items)) => items,
+                    // TODO: do something with is_incomplete
+                    Some(lsp::CompletionResponse::List(lsp::CompletionList {
+                        is_incomplete: _is_incomplete,
+                        items,
+                    })) => items,
+                    None => Vec::new(),
+                }
+                .into_iter()
+                .map(|item| CompletionItem::LSP {
+                    language_server_id,
+                    item,
+                    offset_encoding,
+                })
+                .collect::<Vec<_>>();
+
+                if !prefix.is_empty() {
+                    items = items
+                        .into_iter()
+                        .filter(|item| item.filter_text(&()).starts_with(&prefix))
+                        .collect();
+                }
+
+                if items.is_empty() {
+                    // editor.set_error("No completion available");
+                    return;
+                }
+                let size = compositor.size();
+                let ui = compositor.find::<ui::EditorView>().unwrap();
+                ui.set_or_extend_completion(editor, items, start_offset, trigger_offset, size);
+            },
+        );
+    }
 }
 
 // comments

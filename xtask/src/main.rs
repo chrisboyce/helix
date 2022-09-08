@@ -68,6 +68,7 @@ pub mod md_gen {
 
     use crate::helpers;
     use crate::path;
+    use helix_core::syntax::LanguageServerFeatureConfiguation;
     use helix_term::commands::TYPABLE_COMMAND_LIST;
     use helix_term::health::TsFeature;
     use std::fs;
@@ -162,11 +163,19 @@ pub mod md_gen {
                 );
             }
             row.push(
-                lc.language_server
-                    .as_ref()
+                lc.language_servers
+                    .iter()
+                    .filter_map(|ls| {
+                        let name = match ls {
+                            LanguageServerFeatureConfiguation::Simple(name) => name,
+                            LanguageServerFeatureConfiguation::Features { name, .. } => name,
+                        };
+                        config.language_server.get(name)
+                    })
                     .map(|s| s.command.clone())
                     .map(|c| md_mono(&c))
-                    .unwrap_or_default(),
+                    .collect::<Vec<_>>()
+                    .join(", "),
             );
 
             md.push_str(&md_table_row(&row));

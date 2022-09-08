@@ -8,7 +8,7 @@ use tui::text::{Span, Spans};
 
 use super::{align_view, push_jump, Align, Context, Editor, Open};
 
-use helix_core::{path, Selection};
+use helix_core::{path, syntax::LanguageServerFeature, Selection};
 use helix_view::{editor::Action, theme::Style};
 
 use crate::{
@@ -18,17 +18,36 @@ use crate::{
     },
 };
 
-use std::{borrow::Cow, collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
+// TODO extend this to support multiple language servers
 /// Gets the language server that is attached to a document, and
 /// if it's not active displays a status message. Using this macro
 /// in a context where the editor automatically queries the LSP
 /// (instead of when the user explicitly does so via a keybind like
 /// `gd`) will spam the "LSP inactive" status message confusingly.
 #[macro_export]
-macro_rules! language_server {
-    ($editor:expr, $doc:expr) => {
-        match $doc.language_server() {
+macro_rules! language_server_with_feature {
+    ($editor:expr, $doc:expr, $feature:expr) => {
+        match $doc.language_servers_with_feature($feature).first() {
+            Some(language_server) => &**language_server,
+            None => {
+                $editor.set_status("Language server not active for current buffer or no language server supports this feature");
+                return;
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! language_server_by_id {
+    ($editor:expr, $id:expr) => {
+        match $editor.language_servers.get_by_id($id) {
             Some(language_server) => language_server,
             None => {
                 $editor.set_status("Language server not active for current buffer");
@@ -37,7 +56,6 @@ macro_rules! language_server {
         }
     };
 }
-
 impl ui::menu::Item for lsp::Location {
     /// Current working directory.
     type Data = PathBuf;
@@ -63,24 +81,23 @@ impl ui::menu::Item for lsp::Location {
     }
 }
 
-impl ui::menu::Item for lsp::SymbolInformation {
+impl ui::menu::Item for (lsp::SymbolInformation, OffsetEncoding) {
     /// Path to currently focussed document
     type Data = Option<lsp::Url>;
 
     fn label(&self, current_doc_path: &Self::Data) -> Spans {
-        if current_doc_path.as_ref() == Some(&self.location.uri) {
-            format!("{} [{:?}]", self.name, self.kind).into()
+        let info = &self.0;
+        if current_doc_path.as_ref() == Some(&info.location.uri) {
+            info.name.as_str().into()
         } else {
-            match self.location.uri.to_file_path() {
+            match info.location.uri.to_file_path() {
                 Ok(path) => {
                     let relative_path = helix_core::path::get_relative_path(path.as_path())
                         .to_string_lossy()
                         .into_owned();
-                    format!("{} ({}) [{:?}]", &self.name, relative_path, self.kind).into()
+                    format!("{} ({})", &info.name, relative_path).into()
                 }
-                Err(_) => {
-                    format!("{} ({}) [{:?}]", &self.name, &self.location.uri, self.kind).into()
-                }
+                Err(_) => format!("{} ({})", &info.name, &info.location.uri).into(),
             }
         }
     }
@@ -96,6 +113,7 @@ struct DiagnosticStyles {
 struct PickerDiagnostic {
     url: lsp::Url,
     diag: lsp::Diagnostic,
+    offset_encoding: OffsetEncoding,
 }
 
 impl ui::menu::Item for PickerDiagnostic {
@@ -194,21 +212,37 @@ fn jump_to_location(
     align_view(doc, view, Align::Center);
 }
 
+type SymbolPicker = FilePicker<(lsp::SymbolInformation, OffsetEncoding)>;
+
 fn sym_picker(
-    symbols: Vec<lsp::SymbolInformation>,
+    symbols: Vec<(lsp::SymbolInformation, OffsetEncoding)>,
     current_path: Option<lsp::Url>,
-    offset_encoding: OffsetEncoding,
-) -> FilePicker<lsp::SymbolInformation> {
+) -> SymbolPicker {
     // TODO: drop current_path comparison and instead use workspace: bool flag?
     log::trace!("AAA - {}:{}", file!(), line!());
     FilePicker::new(
         symbols,
         current_path.clone(),
-        move |cx, symbol, action| {
-            let (view, doc) = current!(cx.editor);
-            push_jump(view, doc);
-
-            if current_path.as_ref() != Some(&symbol.location.uri) {
+        // move |(symbol, _offset_encoding)| {
+        //     if current_path.as_ref() == Some(&symbol.location.uri) {
+        //         symbol.name.as_str().into()
+        //     } else {
+        //         match symbol.location.uri.to_file_path() {
+        //             Ok(path) => {
+        //                 let relative_path = helix_core::path::get_relative_path(path.as_path())
+        //                     .to_string_lossy()
+        //                     .into_owned();
+        //                 format!("{} ({})", &symbol.name, relative_path).into()
+        //             }
+        //             Err(_) => format!("{} ({})", &symbol.name, &symbol.location.uri).into(),
+        //         }
+        //     }
+        // },
+        move |cx, (symbol, offset_encoding), action| {
+            if current_path.as_ref() == Some(&symbol.location.uri) {
+                let (view, doc) = current!(cx.editor);
+                push_jump(view, doc);
+            } else {
                 let uri = &symbol.location.uri;
                 let path = match uri.to_file_path() {
                     Ok(path) => path,
@@ -230,7 +264,7 @@ fn sym_picker(
             let (view, doc) = current!(cx.editor);
 
             if let Some(range) =
-                lsp_range_to_range(doc.text(), symbol.location.range, offset_encoding)
+                lsp_range_to_range(doc.text(), symbol.location.range, *offset_encoding)
             {
                 // we flip the range so that the cursor sits on the start of the symbol
                 // (for example start of the function).
@@ -238,7 +272,7 @@ fn sym_picker(
                 align_view(doc, view, Align::Center);
             }
         },
-        move |_editor, symbol| Some(location_to_file_location(&symbol.location)),
+        move |_editor, (symbol, _)| Some(location_to_file_location(&symbol.location)),
     )
     .truncate_start(false)
 }
@@ -251,10 +285,9 @@ enum DiagnosticsFormat {
 
 fn diag_picker(
     cx: &Context,
-    diagnostics: BTreeMap<lsp::Url, Vec<lsp::Diagnostic>>,
+    diagnostics: BTreeMap<lsp::Url, Vec<(lsp::Diagnostic, OffsetEncoding)>>,
     current_path: Option<lsp::Url>,
     format: DiagnosticsFormat,
-    offset_encoding: OffsetEncoding,
 ) -> FilePicker<PickerDiagnostic> {
     // TODO: drop current_path comparison and instead use workspace: bool flag?
 
@@ -262,10 +295,11 @@ fn diag_picker(
     let mut flat_diag = Vec::new();
     for (url, diags) in diagnostics {
         flat_diag.reserve(diags.len());
-        for diag in diags {
+        for (diag, offset_encoding) in diags {
             flat_diag.push(PickerDiagnostic {
                 url: url.clone(),
                 diag,
+                offset_encoding,
             });
         }
     }
@@ -280,7 +314,13 @@ fn diag_picker(
     FilePicker::new(
         flat_diag,
         (styles, format),
-        move |cx, PickerDiagnostic { url, diag }, action| {
+        move |cx,
+              PickerDiagnostic {
+                  url,
+                  diag,
+                  offset_encoding,
+              },
+              action| {
             if current_path.as_ref() == Some(url) {
                 let (view, doc) = current!(cx.editor);
                 push_jump(view, doc);
@@ -291,14 +331,19 @@ fn diag_picker(
 
             let (view, doc) = current!(cx.editor);
 
-            if let Some(range) = lsp_range_to_range(doc.text(), diag.range, offset_encoding) {
+            if let Some(range) = lsp_range_to_range(doc.text(), diag.range, *offset_encoding) {
                 // we flip the range so that the cursor sits on the start of the symbol
                 // (for example start of the function).
                 doc.set_selection(view.id, Selection::single(range.head, range.anchor));
                 align_view(doc, view, Align::Center);
             }
         },
-        move |_editor, PickerDiagnostic { url, diag }| {
+        move |_editor,
+              PickerDiagnostic {
+                  url,
+                  diag,
+                  offset_encoding: _,
+              }| {
             let location = lsp::Location::new(url.clone(), diag.range);
             Some(location_to_file_location(&location))
         },
@@ -327,61 +372,90 @@ pub fn symbol_picker(cx: &mut Context) {
     }
     let doc = doc!(cx.editor);
 
-    let language_server = language_server!(cx.editor, doc);
+    let mut requests = Vec::new();
     let current_url = doc.url();
-    let offset_encoding = language_server.offset_encoding();
 
-    let future = language_server.document_symbols(doc.identifier());
+    for ls in doc.language_servers_with_feature(LanguageServerFeature::DocumentSymbols) {
+        requests.push((ls.document_symbols(doc.identifier()), ls.offset_encoding()));
+    }
 
-    cx.callback(
-        future,
-        move |editor, compositor, response: Option<lsp::DocumentSymbolResponse>| {
-            if let Some(symbols) = response {
-                // lsp has two ways to represent symbols (flat/nested)
-                // convert the nested variant to flat, so that we have a homogeneous list
-                let symbols = match symbols {
-                    lsp::DocumentSymbolResponse::Flat(symbols) => symbols,
-                    lsp::DocumentSymbolResponse::Nested(symbols) => {
-                        let doc = doc!(editor);
-                        let mut flat_symbols = Vec::new();
-                        for symbol in symbols {
-                            nested_to_flat(&mut flat_symbols, &doc.identifier(), symbol)
+    // TODO if the symbol picker was closed before another lsp has sent its symbols,
+    // the symbol picker opens again... This could be solved by using a mutex similar as in code_action
+    for (future, offset_encoding) in requests {
+        let current_url = current_url.clone();
+
+        cx.callback(
+            future,
+            move |editor, compositor, response: Option<lsp::DocumentSymbolResponse>| {
+                if let Some(symbols) = response {
+                    // lsp has two ways to represent symbols (flat/nested)
+                    // convert the nested variant to flat, so that we have a homogeneous list
+                    let symbols = match symbols {
+                        lsp::DocumentSymbolResponse::Flat(symbols) => symbols,
+                        lsp::DocumentSymbolResponse::Nested(symbols) => {
+                            let doc = doc!(editor);
+                            let mut flat_symbols = Vec::new();
+                            for symbol in symbols {
+                                nested_to_flat(&mut flat_symbols, &doc.identifier(), symbol)
+                            }
+                            flat_symbols
                         }
-                        flat_symbols
                     }
-                };
+                    .into_iter()
+                    .map(|s| (s, offset_encoding))
+                    .collect();
 
-                log::info!("AAAAAA {}", file!());
-                let picker = sym_picker(symbols, current_url, offset_encoding);
-                compositor.push(Box::new(overlayed(picker)))
-            }
-        },
-    )
+                    let symbol_picker = compositor.find::<ui::Overlay<SymbolPicker>>();
+                    match symbol_picker {
+                        Some(picker) => picker.content.add_options(symbols),
+                        None => {
+                            let picker = overlayed(sym_picker(symbols, current_url));
+                            compositor.push(Box::new(picker));
+                        }
+                    }
+                }
+            },
+        )
+    }
 }
 
 pub fn workspace_symbol_picker(cx: &mut Context) {
     let doc = doc!(cx.editor);
     let current_url = doc.url();
-    let language_server = language_server!(cx.editor, doc);
-    let offset_encoding = language_server.offset_encoding();
-    let future = language_server.workspace_symbols("".to_string());
 
-    cx.callback(
-        future,
-        move |_editor, compositor, response: Option<Vec<lsp::SymbolInformation>>| {
-            if let Some(symbols) = response {
-                let picker = sym_picker(symbols, current_url, offset_encoding);
-                compositor.push(Box::new(overlayed(picker)))
-            }
-        },
-    )
+    let mut requests = Vec::new();
+
+    for ls in doc.language_servers_with_feature(LanguageServerFeature::WorkspaceSymbols) {
+        requests.push((ls.workspace_symbols("".to_string()), ls.offset_encoding()));
+    }
+
+    // TODO if the symbol picker was closed before another lsp has sent its symbols,
+    // the symbol picker opens again... This could be solved by using a mutex similar as in code_action
+    for (future, offset_encoding) in requests {
+        let current_url = current_url.clone();
+
+        cx.callback(
+            future,
+            move |_editor, compositor, response: Option<Vec<lsp::SymbolInformation>>| {
+                if let Some(symbols) = response {
+                    let symbols = symbols.into_iter().map(|s| (s, offset_encoding)).collect();
+                    let symbol_picker = compositor.find::<ui::Overlay<SymbolPicker>>();
+                    match symbol_picker {
+                        Some(picker) => picker.content.add_options(symbols),
+                        None => {
+                            let picker = overlayed(sym_picker(symbols, current_url));
+                            compositor.push(Box::new(picker));
+                        }
+                    }
+                }
+            },
+        )
+    }
 }
 
 pub fn diagnostics_picker(cx: &mut Context) {
     let doc = doc!(cx.editor);
-    let language_server = language_server!(cx.editor, doc);
     if let Some(current_url) = doc.url() {
-        let offset_encoding = language_server.offset_encoding();
         let diagnostics = cx
             .editor
             .diagnostics
@@ -393,7 +467,6 @@ pub fn diagnostics_picker(cx: &mut Context) {
             [(current_url.clone(), diagnostics)].into(),
             Some(current_url),
             DiagnosticsFormat::HideSourcePath,
-            offset_encoding,
         );
         cx.push_layer(Box::new(overlayed(picker)));
     }
@@ -401,24 +474,21 @@ pub fn diagnostics_picker(cx: &mut Context) {
 
 pub fn workspace_diagnostics_picker(cx: &mut Context) {
     let doc = doc!(cx.editor);
-    let language_server = language_server!(cx.editor, doc);
     let current_url = doc.url();
-    let offset_encoding = language_server.offset_encoding();
     let diagnostics = cx.editor.diagnostics.clone();
     let picker = diag_picker(
         cx,
         diagnostics,
         current_url,
         DiagnosticsFormat::ShowSourcePath,
-        offset_encoding,
     );
     cx.push_layer(Box::new(overlayed(picker)));
 }
 
-impl ui::menu::Item for lsp::CodeActionOrCommand {
+impl ui::menu::Item for (lsp::CodeActionOrCommand, OffsetEncoding) {
     type Data = ();
     fn label(&self, _data: &Self::Data) -> Spans {
-        match self {
+        match &self.0 {
             lsp::CodeActionOrCommand::CodeAction(action) => action.title.as_str().into(),
             lsp::CodeActionOrCommand::Command(command) => command.title.as_str().into(),
         }
@@ -428,82 +498,119 @@ impl ui::menu::Item for lsp::CodeActionOrCommand {
 pub fn code_action(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
 
-    let language_server = language_server!(cx.editor, doc);
-
     let selection_range = doc.selection(view.id).primary();
-    let offset_encoding = language_server.offset_encoding();
 
-    let range = range_to_lsp_range(doc.text(), selection_range, offset_encoding);
+    // this ensures, that a previously opened menu that doesn't have anything to do with this command will be replaced with a new menu
+    let code_actions_menu_open = Arc::new(Mutex::new(false));
 
-    let future = language_server.code_actions(
-        doc.identifier(),
-        range,
-        // Filter and convert overlapping diagnostics
-        lsp::CodeActionContext {
-            diagnostics: doc
-                .diagnostics()
-                .iter()
-                .filter(|&diag| {
-                    selection_range
-                        .overlaps(&helix_core::Range::new(diag.range.start, diag.range.end))
-                })
-                .map(|diag| diagnostic_to_lsp_diagnostic(doc.text(), diag, offset_encoding))
-                .collect(),
-            only: None,
-        },
-    );
+    let mut requests = Vec::new();
 
-    cx.callback(
-        future,
-        move |editor, compositor, response: Option<lsp::CodeActionResponse>| {
-            let actions = match response {
-                Some(a) => a,
-                None => return,
-            };
-            if actions.is_empty() {
-                editor.set_status("No code actions available");
-                return;
-            }
+    for language_server in doc.language_servers_with_feature(LanguageServerFeature::CodeAction) {
+        let offset_encoding = language_server.offset_encoding();
+        let range = range_to_lsp_range(doc.text(), selection_range, offset_encoding);
 
-            let mut picker = ui::Menu::new(actions, (), move |editor, code_action, event| {
-                if event != PromptEvent::Validate {
+        requests.push((
+            language_server.code_actions(
+                doc.identifier(),
+                range,
+                // Filter and convert overlapping diagnostics
+                lsp::CodeActionContext {
+                    diagnostics: doc
+                        .diagnostics()
+                        .iter()
+                        .filter(|&diag| {
+                            selection_range
+                                .overlaps(&helix_core::Range::new(diag.range.start, diag.range.end))
+                        })
+                        .map(|diag| diagnostic_to_lsp_diagnostic(doc.text(), diag, offset_encoding))
+                        .collect(),
+                    only: None,
+                },
+            ),
+            offset_encoding,
+            language_server.id(),
+        ));
+    }
+
+    for (future, offset_encoding, lsp_id) in requests {
+        let code_actions_menu_open = code_actions_menu_open.clone();
+
+        cx.callback(
+            future,
+            move |editor, compositor, response: Option<lsp::CodeActionResponse>| {
+                let actions = match response {
+                    Some(a) => a
+                        .into_iter()
+                        .map(|a| (a, offset_encoding))
+                        .collect::<Vec<_>>(),
+                    None => return,
+                };
+
+                let mut code_actions_menu_open = code_actions_menu_open.lock().unwrap();
+
+                if actions.is_empty() && !*code_actions_menu_open {
+                    editor.set_status("No code actions available");
                     return;
                 }
 
-                // always present here
-                let code_action = code_action.unwrap();
+                let code_actions_menu = compositor.find_id::<Popup<
+                    ui::Menu<(lsp::CodeActionOrCommand, OffsetEncoding)>,
+                >>("code-action");
 
-                match code_action {
-                    lsp::CodeActionOrCommand::Command(command) => {
-                        log::debug!("code action command: {:?}", command);
-                        execute_lsp_command(editor, command.clone());
-                    }
-                    lsp::CodeActionOrCommand::CodeAction(code_action) => {
-                        log::debug!("code action: {:?}", code_action);
-                        if let Some(ref workspace_edit) = code_action.edit {
-                            log::debug!("edit: {:?}", workspace_edit);
-                            apply_workspace_edit(editor, offset_encoding, workspace_edit);
-                        }
+                if !*code_actions_menu_open || code_actions_menu.is_none() {
+                    let mut picker =
+                        ui::Menu::new(actions, (), move |editor, code_action, event| {
+                            if event != PromptEvent::Validate {
+                                return;
+                            }
 
-                        // if code action provides both edit and command first the edit
-                        // should be applied and then the command
-                        if let Some(command) = &code_action.command {
-                            execute_lsp_command(editor, command.clone());
-                        }
-                    }
+                            // always present here
+                            let code_action = code_action.unwrap();
+
+                            match code_action {
+                                (lsp::CodeActionOrCommand::Command(command), _encoding) => {
+                                    log::debug!("code action command: {:?}", command);
+                                    execute_lsp_command(editor, lsp_id, command.clone());
+                                }
+                                (
+                                    lsp::CodeActionOrCommand::CodeAction(code_action),
+                                    offset_encoding,
+                                ) => {
+                                    log::debug!("code action: {:?}", code_action);
+                                    if let Some(ref workspace_edit) = code_action.edit {
+                                        log::debug!("edit: {:?}", workspace_edit);
+                                        apply_workspace_edit(
+                                            editor,
+                                            *offset_encoding,
+                                            workspace_edit,
+                                        );
+                                    }
+
+                                    // if code action provides both edit and command first the edit
+                                    // should be applied and then the command
+                                    if let Some(command) = &code_action.command {
+                                        execute_lsp_command(editor, lsp_id, command.clone());
+                                    }
+                                }
+                            }
+                        });
+                    picker.move_down(); // pre-select the first item
+
+                    let popup = Popup::new("code-action", picker)
+                        .margin(helix_view::graphics::Margin::all(1))
+                        .auto_close(true);
+                    compositor.replace_or_push("code-action", popup);
+                    *code_actions_menu_open = true;
+                } else if let Some(code_actions_menu) = code_actions_menu {
+                    let picker = code_actions_menu.contents_mut();
+                    picker.add_options(actions)
                 }
-            });
-            picker.move_down(); // pre-select the first item
-
-            let popup =
-                Popup::new("code-action", picker).margin(helix_view::graphics::Margin::all(1));
-            compositor.replace_or_push("code-action", popup);
-        },
-    )
+            },
+        )
+    }
 }
-pub fn execute_lsp_command(editor: &mut Editor, cmd: lsp::Command) {
-    let doc = doc!(editor);
-    let language_server = language_server!(editor, doc);
+pub fn execute_lsp_command(editor: &mut Editor, language_server_id: usize, cmd: lsp::Command) {
+    let language_server = language_server_by_id!(editor, language_server_id);
 
     // the command is executed on the server and communicated back
     // to the client asynchronously using workspace edits
@@ -740,7 +847,8 @@ fn to_locations(definitions: Option<lsp::GotoDefinitionResponse>) -> Vec<lsp::Lo
 
 pub fn goto_definition(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
-    let language_server = language_server!(cx.editor, doc);
+    let language_server =
+        language_server_with_feature!(cx.editor, doc, LanguageServerFeature::GotoDefinition);
     let offset_encoding = language_server.offset_encoding();
 
     let pos = doc.position(view.id, offset_encoding);
@@ -758,7 +866,8 @@ pub fn goto_definition(cx: &mut Context) {
 
 pub fn goto_type_definition(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
-    let language_server = language_server!(cx.editor, doc);
+    let language_server =
+        language_server_with_feature!(cx.editor, doc, LanguageServerFeature::GotoTypeDefinition);
     let offset_encoding = language_server.offset_encoding();
 
     let pos = doc.position(view.id, offset_encoding);
@@ -776,7 +885,8 @@ pub fn goto_type_definition(cx: &mut Context) {
 
 pub fn goto_implementation(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
-    let language_server = language_server!(cx.editor, doc);
+    let language_server =
+        language_server_with_feature!(cx.editor, doc, LanguageServerFeature::GotoImplementation);
     let offset_encoding = language_server.offset_encoding();
 
     let pos = doc.position(view.id, offset_encoding);
@@ -794,7 +904,8 @@ pub fn goto_implementation(cx: &mut Context) {
 
 pub fn goto_reference(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
-    let language_server = language_server!(cx.editor, doc);
+    let language_server =
+        language_server_with_feature!(cx.editor, doc, LanguageServerFeature::GotoReference);
     let offset_encoding = language_server.offset_encoding();
 
     let pos = doc.position(view.id, offset_encoding);
@@ -821,11 +932,14 @@ pub fn signature_help(cx: &mut Context) {
 }
 
 pub fn signature_help_impl(cx: &mut Context, invoked: SignatureHelpInvoked) {
-    let (view, doc) = current!(cx.editor);
+    let doc = doc!(cx.editor);
     let was_manually_invoked = invoked == SignatureHelpInvoked::Manual;
 
-    let language_server = match doc.language_server() {
-        Some(language_server) => language_server,
+    let language_server_id = match doc
+        .language_servers_with_feature(LanguageServerFeature::SignatureHelp)
+        .first()
+    {
+        Some(language_server) => language_server.id(),
         None => {
             // Do not show the message if signature help was invoked
             // automatically on backspace, trigger characters, etc.
@@ -836,6 +950,17 @@ pub fn signature_help_impl(cx: &mut Context, invoked: SignatureHelpInvoked) {
             return;
         }
     };
+    signature_help_impl_with_language_server_id(cx, language_server_id, invoked);
+}
+
+pub fn signature_help_impl_with_language_server_id(
+    cx: &mut Context,
+    language_server_id: usize,
+    invoked: SignatureHelpInvoked,
+) {
+    let was_manually_invoked = invoked == SignatureHelpInvoked::Manual;
+    let (view, doc) = current!(cx.editor);
+    let language_server = language_server_by_id!(cx.editor, language_server_id);
     let offset_encoding = language_server.offset_encoding();
 
     let pos = doc.position(view.id, offset_encoding);
@@ -928,7 +1053,8 @@ pub fn signature_help_impl(cx: &mut Context, invoked: SignatureHelpInvoked) {
 
 pub fn hover(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
-    let language_server = language_server!(cx.editor, doc);
+    let language_server =
+        language_server_with_feature!(cx.editor, doc, LanguageServerFeature::Hover);
     let offset_encoding = language_server.offset_encoding();
 
     // TODO: factor out a doc.position_identifier() that returns lsp::TextDocumentPositionIdentifier
@@ -1000,7 +1126,8 @@ pub fn rename_symbol(cx: &mut Context) {
             }
 
             let (view, doc) = current!(cx.editor);
-            let language_server = language_server!(cx.editor, doc);
+            let language_server =
+                language_server_with_feature!(cx.editor, doc, LanguageServerFeature::RenameSymbol);
             let offset_encoding = language_server.offset_encoding();
 
             let pos = doc.position(view.id, offset_encoding);
@@ -1016,7 +1143,8 @@ pub fn rename_symbol(cx: &mut Context) {
 
 pub fn select_references_to_symbol_under_cursor(cx: &mut Context) {
     let (view, doc) = current!(cx.editor);
-    let language_server = language_server!(cx.editor, doc);
+    let language_server =
+        language_server_with_feature!(cx.editor, doc, LanguageServerFeature::DocumentHighlight);
     let offset_encoding = language_server.offset_encoding();
 
     let pos = doc.position(view.id, offset_encoding);
@@ -1031,8 +1159,6 @@ pub fn select_references_to_symbol_under_cursor(cx: &mut Context) {
                 _ => return,
             };
             let (view, doc) = current!(editor);
-            let language_server = language_server!(editor, doc);
-            let offset_encoding = language_server.offset_encoding();
             let text = doc.text();
             let pos = doc.selection(view.id).primary().head;
 
