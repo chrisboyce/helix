@@ -205,7 +205,7 @@ with <code>hx --grammar build</code> (requires a C++ compiler).</p>
 Follow the <a href="https://github.com/helix-editor/helix/wiki/How-to-install-the-default-language-servers">instructions on the wiki page</a> to add your language servers of choice.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="usage"><a class="header" href="#usage">Usage</a></h1>
 <p>(Currently not fully documented, see the <a href="./keymap.html">keymappings</a> list for more.)</p>
-<p>See <a href="https://github.com/helix-editor/helix/blob/master/runtime/tutor.txt">tutor.txt</a> (accessible via <code>hx --tutor</code> or <code>:tutor</code>) for a vimtutor-like introduction.</p>
+<p>See <a href="https://github.com/helix-editor/helix/blob/master/runtime/tutor">tutor</a> (accessible via <code>hx --tutor</code> or <code>:tutor</code>) for a vimtutor-like introduction.</p>
 <h2 id="registers"><a class="header" href="#registers">Registers</a></h2>
 <p>Vim-like registers can be used to yank and store text to be pasted later. Usage is similar, with <code>&quot;</code> being used to select a register:</p>
 <ul>
@@ -299,16 +299,16 @@ will move the selection over to the &quot;func&quot; <code>identifier</code>.</p
 <pre><code>[func](arg1, arg2, arg3)
 </code></pre>
 <h2 id="textobjects"><a class="header" href="#textobjects">Textobjects</a></h2>
-<p>Currently supported: <code>word</code>, <code>surround</code>, <code>function</code>, <code>class</code>, <code>parameter</code>.</p>
 <p><img src="https://user-images.githubusercontent.com/23398472/124231131-81a4bb00-db2d-11eb-9d10-8e577ca7b177.gif" alt="textobject-demo" />
 <img src="https://user-images.githubusercontent.com/23398472/132537398-2a2e0a54-582b-44ab-a77f-eb818942203d.gif" alt="textobject-treesitter-demo" /></p>
 <ul>
-<li><code>ma</code> - Select around the object (<code>va</code> in vim, <code>&lt;alt-a&gt;</code> in kakoune)</li>
-<li><code>mi</code> - Select inside the object (<code>vi</code> in vim, <code>&lt;alt-i&gt;</code> in kakoune)</li>
+<li><code>ma</code> - Select around the object (<code>va</code> in Vim, <code>&lt;alt-a&gt;</code> in Kakoune)</li>
+<li><code>mi</code> - Select inside the object (<code>vi</code> in Vim, <code>&lt;alt-i&gt;</code> in Kakoune)</li>
 </ul>
 <div class="table-wrapper"><table><thead><tr><th>Key after <code>mi</code> or <code>ma</code></th><th>Textobject selected</th></tr></thead><tbody>
 <tr><td><code>w</code></td><td>Word</td></tr>
 <tr><td><code>W</code></td><td>WORD</td></tr>
+<tr><td><code>p</code></td><td>Paragraph</td></tr>
 <tr><td><code>(</code>, <code>[</code>, <code>'</code>, etc</td><td>Specified surround pairs</td></tr>
 <tr><td><code>m</code></td><td>Closest surround pair</td></tr>
 <tr><td><code>f</code></td><td>Function</td></tr>
@@ -378,7 +378,7 @@ and therefore requires the corresponding query file to work properly.</p>
 <h2 id="normal-mode"><a class="header" href="#normal-mode">Normal mode</a></h2>
 <h3 id="movement"><a class="header" href="#movement">Movement</a></h3>
 <blockquote>
-<p>NOTE: Unlike vim, <code>f</code>, <code>F</code>, <code>t</code> and <code>T</code> are not confined to the current line.</p>
+<p>NOTE: Unlike Vim, <code>f</code>, <code>F</code>, <code>t</code> and <code>T</code> are not confined to the current line.</p>
 </blockquote>
 <div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Command</th></tr></thead><tbody>
 <tr><td><code>h</code>, <code>Left</code></td><td>Move left</td><td><code>move_char_left</code></td></tr>
@@ -563,7 +563,7 @@ and <a href="./usage.html#textobject">textobject</a> usage.</p>
 </div>
 <p>TODO: Mappings for selecting syntax nodes (a superset of <code>[</code>).</p>
 <h4 id="window-mode"><a class="header" href="#window-mode">Window mode</a></h4>
-<p>This layer is similar to vim keybindings as kakoune does not support window.</p>
+<p>This layer is similar to Vim keybindings as Kakoune does not support window.</p>
 <div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Command</th></tr></thead><tbody>
 <tr><td><code>w</code>, <code>Ctrl-w</code></td><td>Switch to next window</td><td><code>rotate_view</code></td></tr>
 <tr><td><code>v</code>, <code>Ctrl-v</code></td><td>Vertical right split</td><td><code>vsplit</code></td></tr>
@@ -641,35 +641,49 @@ and <a href="./usage.html#textobject">textobject</a> usage.</p>
 </tbody></table>
 </div>
 <h2 id="insert-mode"><a class="header" href="#insert-mode">Insert Mode</a></h2>
-<p>We support many readline/emacs style bindings in insert mode for
-convenience. These can be helpful for making simple modifications
-without escaping to normal mode, but beware that you will not have an
-undo-able &quot;save point&quot; until you return to normal mode.</p>
+<p>Insert mode bindings are somewhat minimal by default. Helix is designed to
+be a modal editor, and this is reflected in the user experience and internal
+mechanics. For example, changes to the text are only saved for undos when
+escaping from insert mode to normal mode. For this reason, new users are
+strongly encouraged to learn the modal editing paradigm to get the smoothest
+experience.</p>
 <div class="table-wrapper"><table><thead><tr><th>Key</th><th>Description</th><th>Command</th></tr></thead><tbody>
 <tr><td><code>Escape</code></td><td>Switch to normal mode</td><td><code>normal_mode</code></td></tr>
 <tr><td><code>Ctrl-x</code></td><td>Autocomplete</td><td><code>completion</code></td></tr>
 <tr><td><code>Ctrl-r</code></td><td>Insert a register content</td><td><code>insert_register</code></td></tr>
 <tr><td><code>Ctrl-w</code>, <code>Alt-Backspace</code>, <code>Ctrl-Backspace</code></td><td>Delete previous word</td><td><code>delete_word_backward</code></td></tr>
 <tr><td><code>Alt-d</code>, <code>Alt-Delete</code>, <code>Ctrl-Delete</code></td><td>Delete next word</td><td><code>delete_word_forward</code></td></tr>
-<tr><td><code>Alt-b</code>, <code>Ctrl-Left</code></td><td>Backward a word</td><td><code>move_prev_word_end</code></td></tr>
-<tr><td><code>Ctrl-b</code>, <code>Left</code></td><td>Backward a char</td><td><code>move_char_left</code></td></tr>
-<tr><td><code>Alt-f</code>, <code>Ctrl-Right</code></td><td>Forward a word</td><td><code>move_next_word_start</code></td></tr>
-<tr><td><code>Ctrl-f</code>, <code>Right</code></td><td>Forward a char</td><td><code>move_char_right</code></td></tr>
-<tr><td><code>Ctrl-e</code>, <code>End</code></td><td>Move to line end</td><td><code>goto_line_end_newline</code></td></tr>
-<tr><td><code>Ctrl-a</code>, <code>Home</code></td><td>Move to line start</td><td><code>goto_line_start</code></td></tr>
 <tr><td><code>Ctrl-u</code></td><td>Delete to start of line</td><td><code>kill_to_line_start</code></td></tr>
 <tr><td><code>Ctrl-k</code></td><td>Delete to end of line</td><td><code>kill_to_line_end</code></td></tr>
 <tr><td><code>Ctrl-j</code>, <code>Enter</code></td><td>Insert new line</td><td><code>insert_newline</code></td></tr>
 <tr><td><code>Backspace</code>, <code>Ctrl-h</code></td><td>Delete previous char</td><td><code>delete_char_backward</code></td></tr>
 <tr><td><code>Delete</code>, <code>Ctrl-d</code></td><td>Delete next char</td><td><code>delete_char_forward</code></td></tr>
-<tr><td><code>Ctrl-p</code>, <code>Up</code></td><td>Move to previous line</td><td><code>move_line_up</code></td></tr>
-<tr><td><code>Ctrl-n</code>, <code>Down</code></td><td>Move to next line</td><td><code>move_line_down</code></td></tr>
-<tr><td><code>PageUp</code></td><td>Move one page up</td><td><code>page_up</code></td></tr>
-<tr><td><code>PageDown</code></td><td>Move one page down</td><td><code>page_down</code></td></tr>
-<tr><td><code>Alt-&gt;</code></td><td>Go to end of buffer</td><td><code>goto_file_end</code></td></tr>
-<tr><td><code>Alt-&lt;</code></td><td>Go to start of buffer</td><td><code>goto_file_start</code></td></tr>
 </tbody></table>
 </div>
+<p>However, if you really want navigation in insert mode, this is supported. An
+example config that gives the ability to use arrow keys while still in insert
+mode:</p>
+<pre><code class="language-toml">[keys.insert]
+&quot;up&quot; = &quot;move_line_up&quot;
+&quot;down&quot; = &quot;move_line_down&quot;
+&quot;left&quot; = &quot;move_char_left&quot;
+&quot;right&quot; = &quot;move_char_right&quot;
+&quot;C-b&quot; = &quot;move_char_left&quot;
+&quot;C-f&quot; = &quot;move_char_right&quot;
+&quot;A-b&quot; = &quot;move_prev_word_end&quot;
+&quot;C-left&quot; = &quot;move_prev_word_end&quot;
+&quot;A-f&quot; = &quot;move_next_word_start&quot;
+&quot;C-right&quot; = &quot;move_next_word_start&quot;
+&quot;A-&lt;&quot; = &quot;goto_file_start&quot;
+&quot;A-&gt;&quot; = &quot;goto_file_end&quot;
+&quot;pageup&quot; = &quot;page_up&quot;
+&quot;pagedown&quot; = &quot;page_down&quot;
+&quot;home&quot; = &quot;goto_line_start&quot;
+&quot;C-a&quot; = &quot;goto_line_start&quot;
+&quot;end&quot; = &quot;goto_line_end_newline&quot;
+&quot;C-e&quot; = &quot;goto_line_end_newline&quot;
+&quot;A-left&quot; = &quot;goto_line_start&quot;
+</code></pre>
 <h2 id="select--extend-mode"><a class="header" href="#select--extend-mode">Select / extend mode</a></h2>
 <p>This mode echoes Normal mode, but changes any movements to extend
 selections rather than replace them. Goto motions are also changed to
@@ -722,7 +736,7 @@ you to selectively add search terms to your selections.</p>
 <tr><td><code>Enter</code></td><td>Open selected</td></tr>
 </tbody></table>
 </div><div style="break-before: page; page-break-before: always;"></div><h1 id="commands"><a class="header" href="#commands">Commands</a></h1>
-<p>Command mode can be activated by pressing <code>:</code>, similar to vim. Built-in commands:</p>
+<p>Command mode can be activated by pressing <code>:</code>, similar to Vim. Built-in commands:</p>
 <div class="table-wrapper"><table><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>
 <tr><td><code>:quit</code>, <code>:q</code></td><td>Close the current view.</td></tr>
 <tr><td><code>:quit!</code>, <code>:q!</code></td><td>Force close the current view, ignoring unsaved changes.</td></tr>
@@ -768,6 +782,7 @@ you to selectively add search terms to your selections.</p>
 <tr><td><code>:show-directory</code>, <code>:pwd</code></td><td>Show the current working directory.</td></tr>
 <tr><td><code>:encoding</code></td><td>Set encoding. Based on <code>https://encoding.spec.whatwg.org</code>.</td></tr>
 <tr><td><code>:reload</code></td><td>Discard changes and reload from the source file.</td></tr>
+<tr><td><code>:lsp-restart</code></td><td>Restarts the Language Server that is in use by the current doc</td></tr>
 <tr><td><code>:tree-sitter-scopes</code></td><td>Display tree sitter scopes, primarily for theming and development.</td></tr>
 <tr><td><code>:debug-start</code>, <code>:dbg</code></td><td>Start a debug session from a given template with given parameters.</td></tr>
 <tr><td><code>:debug-remote</code>, <code>:dbg-tcp</code></td><td>Connect to a debug adapter by TCP address and start a debugging session from a given template with given parameters.</td></tr>
@@ -801,8 +816,10 @@ appropriate Language Server.</p>
 <p>Also see the <a href="./languages.html">Language Configuration</a> docs and the <a href="./guides/adding_languages.html">Adding
 Languages</a> guide for more language configuration information.</p>
 <div class="table-wrapper"><table><thead><tr><th>Language</th><th>Syntax Highlighting</th><th>Treesitter Textobjects</th><th>Auto Indent</th><th>Default LSP</th></tr></thead><tbody>
+<tr><td>astro</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>awk</td><td>✓</td><td>✓</td><td></td><td><code>awk-language-server</code></td></tr>
 <tr><td>bash</td><td>✓</td><td></td><td></td><td><code>bash-language-server</code></td></tr>
+<tr><td>bass</td><td>✓</td><td></td><td></td><td><code>bass</code></td></tr>
 <tr><td>beancount</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>c</td><td>✓</td><td>✓</td><td>✓</td><td><code>clangd</code></td></tr>
 <tr><td>c-sharp</td><td>✓</td><td>✓</td><td></td><td><code>OmniSharp</code></td></tr>
@@ -830,7 +847,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>esdl</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>fish</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>fortran</td><td>✓</td><td></td><td>✓</td><td><code>fortls</code></td></tr>
-<tr><td>gdscript</td><td>✓</td><td></td><td></td><td></td></tr>
+<tr><td>gdscript</td><td>✓</td><td>✓</td><td></td><td></td></tr>
 <tr><td>git-attributes</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>git-commit</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>git-config</td><td>✓</td><td></td><td></td><td></td></tr>
@@ -839,6 +856,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>gleam</td><td>✓</td><td>✓</td><td></td><td><code>gleam</code></td></tr>
 <tr><td>glsl</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
 <tr><td>go</td><td>✓</td><td>✓</td><td>✓</td><td><code>gopls</code></td></tr>
+<tr><td>godot-resource</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>gomod</td><td>✓</td><td></td><td></td><td><code>gopls</code></td></tr>
 <tr><td>gotmpl</td><td>✓</td><td></td><td></td><td><code>gopls</code></td></tr>
 <tr><td>gowork</td><td>✓</td><td></td><td></td><td><code>gopls</code></td></tr>
@@ -854,7 +872,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>javascript</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
 <tr><td>jsdoc</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>json</td><td>✓</td><td></td><td>✓</td><td><code>vscode-json-language-server</code></td></tr>
-<tr><td>jsonnet</td><td>✓</td><td></td><td></td><td></td></tr>
+<tr><td>jsonnet</td><td>✓</td><td></td><td></td><td><code>jsonnet-language-server</code></td></tr>
 <tr><td>jsx</td><td>✓</td><td>✓</td><td>✓</td><td><code>typescript-language-server</code></td></tr>
 <tr><td>julia</td><td>✓</td><td></td><td></td><td><code>julia</code></td></tr>
 <tr><td>kotlin</td><td>✓</td><td></td><td></td><td><code>kotlin-language-server</code></td></tr>
@@ -866,7 +884,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>llvm-mir-yaml</td><td>✓</td><td></td><td>✓</td><td></td></tr>
 <tr><td>lua</td><td>✓</td><td></td><td>✓</td><td><code>lua-language-server</code></td></tr>
 <tr><td>make</td><td>✓</td><td></td><td></td><td></td></tr>
-<tr><td>markdown</td><td>✓</td><td></td><td></td><td></td></tr>
+<tr><td>markdown</td><td>✓</td><td></td><td></td><td><code>marksman</code></td></tr>
 <tr><td>markdown.inline</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>meson</td><td>✓</td><td></td><td>✓</td><td></td></tr>
 <tr><td>mint</td><td></td><td></td><td></td><td><code>mint</code></td></tr>
@@ -876,7 +894,7 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>ocaml</td><td>✓</td><td></td><td>✓</td><td><code>ocamllsp</code></td></tr>
 <tr><td>ocaml-interface</td><td>✓</td><td></td><td></td><td><code>ocamllsp</code></td></tr>
 <tr><td>odin</td><td>✓</td><td></td><td></td><td><code>ols</code></td></tr>
-<tr><td>openscad</td><td>✓</td><td></td><td></td><td><code>openscad-language-server</code></td></tr>
+<tr><td>openscad</td><td>✓</td><td></td><td></td><td><code>openscad-lsp</code></td></tr>
 <tr><td>org</td><td>✓</td><td></td><td></td><td></td></tr>
 <tr><td>pascal</td><td>✓</td><td>✓</td><td></td><td><code>pasls</code></td></tr>
 <tr><td>perl</td><td>✓</td><td>✓</td><td>✓</td><td></td></tr>
@@ -923,8 +941,8 @@ Languages</a> guide for more language configuration information.</p>
 <tr><td>zig</td><td>✓</td><td></td><td>✓</td><td><code>zls</code></td></tr>
 </tbody></table>
 </div><div style="break-before: page; page-break-before: always;"></div><h1 id="migrating-from-vim"><a class="header" href="#migrating-from-vim">Migrating from Vim</a></h1>
-<p>Helix's editing model is strongly inspired from vim and kakoune, and a notable
-difference from vim (and the most striking similarity to kakoune) is that Helix
+<p>Helix's editing model is strongly inspired from Vim and Kakoune, and a notable
+difference from Vim (and the most striking similarity to Kakoune) is that Helix
 follows the <code>selection → action</code> model. This means that the whatever you are
 going to act on (a word, a paragraph, a line, etc) is selected first and the
 action itself (delete, change, yank, etc) comes second. A cursor is simply a
@@ -1434,7 +1452,11 @@ over it and is merged into the default palette.</p>
 <tr><td><code>diagnostic.warning</code></td><td>Diagnostics warning (editing area)</td></tr>
 <tr><td><code>diagnostic.error</code></td><td>Diagnostics error (editing area)</td></tr>
 </tbody></table>
-</div><div style="break-before: page; page-break-before: always;"></div><h1 id="key-remapping"><a class="header" href="#key-remapping">Key Remapping</a></h1>
+</div>
+<p>You can check compliance to spec with</p>
+<pre><code class="language-shell">cargo xtask themelint onedark  # replace onedark with &lt;name&gt;
+</code></pre>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="key-remapping"><a class="header" href="#key-remapping">Key Remapping</a></h1>
 <p>One-way key remapping is temporarily supported via a simple TOML configuration
 file. (More powerful solutions such as rebinding via commands will be
 available in the future).</p>
@@ -1611,7 +1633,7 @@ language with the path <code>runtime/queries/&lt;name&gt;/</code>. The tree-sitt
 gives more info on how to write queries.</p>
 <blockquote>
 <p>NOTE: When evaluating queries, the first matching query takes
-precedence, which is different from other editors like neovim where
+precedence, which is different from other editors like Neovim where
 the last matching query supersedes the ones before it. See
 <a href="https://github.com/helix-editor/helix/pull/1170#issuecomment-997294090">this issue</a> for an example.</p>
 </blockquote>
