@@ -79,17 +79,23 @@ impl ui::menu::Item for lsp::SymbolInformation {
     type Data = Option<lsp::Url>;
 
     fn label(&self, current_doc_path: &Self::Data) -> Spans {
-        if current_doc_path.as_ref() == Some(&self.location.uri) {
-            self.name.as_str().into()
-        } else {
-            match self.location.uri.to_file_path() {
-                Ok(path) => {
-                    let get_relative_path = path::get_relative_path(path.as_path());
-                    format!("{} ({})", &self.name, get_relative_path.to_string_lossy()).into()
-                }
-                Err(_) => format!("{} ({})", &self.name, &self.location.uri).into(),
+        // if current_doc_path.as_ref() == Some(&self.location.uri) {
+        //     format!("{}!!!", self.name.as_str()).into()
+        // } else {
+        match self.location.uri.to_file_path() {
+            Ok(path) => {
+                let get_relative_path = path::get_relative_path(path.as_path());
+                format!(
+                    "{} ({}) [{:?}]",
+                    &self.name,
+                    get_relative_path.to_string_lossy(),
+                    self.kind
+                )
+                .into()
             }
+            Err(_) => format!("{} ({}) [{:?}]", &self.name, &self.location.uri, self.kind).into(),
         }
+        // }
     }
 }
 
